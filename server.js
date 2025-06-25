@@ -143,41 +143,6 @@ app.get('/employees/:id', async (req, res) => {
 });
 
 
-// ---------- PUT /employees/:id ----------
-app.put('/employees/:id', upload.single('img'), async (req, res) => {
-  try {
-    const update = {
-      name       : req.body.name,
-      description: req.body.description,
-      email      : req.body.email,
-      phone      : req.body.phone,
-      reportsTo  : req.body.reportsTo || null,
-    };
-
-    if (req.file) {
-      // Save only the public URL or relative path in MongoDB
-      update.img = `/uploads/${req.file.filename}`;
-    }
-
-     // If deletion flag present, clear image
-    if (req.body.imgDeleted === '1') {
-      update.img = null;
-      // Optionally: delete file from disk here
-    }
-
-    const updated = await Employee.findByIdAndUpdate(
-      req.params.id,
-      update,
-      { new: true, runValidators: true },
-    ).exec();
-
-    if (!updated) return res.status(404).json({ error: 'Not found' });
-    res.json(updated);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
 // 5. DELETE /employees/:id
 app.delete('/employees/:id', async (req, res) => {
   try {
