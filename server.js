@@ -143,6 +143,30 @@ app.get('/employees/:id', async (req, res) => {
 });
 
 
+// ---------- PUT /employees/:id ----------
+app.put('/employees/:id', async (req, res) => {
+  try {
+    const update = {
+      name       : req.body.name,
+      description: req.body.description,
+      email      : req.body.email,
+      phone      : req.body.phone,
+      reportsTo  : req.body.reportsTo || null,
+    };
+
+    const updated = await Employee.findByIdAndUpdate(
+      req.params.id,
+      update,
+      { new: true, runValidators: true },
+    ).exec();
+
+    if (!updated) return res.status(404).json({ error: 'Not found' });
+    res.json(updated);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // 5. DELETE /employees/:id
 app.delete('/employees/:id', async (req, res) => {
   try {
