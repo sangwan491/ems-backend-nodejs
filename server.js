@@ -88,47 +88,71 @@ app.get('/employees/hierarchy', async (req, res) => {
 // 6. SEARCH + PAGINATION
 //    GET /employees/search/:searchTerm/page/:page
 //    returns at most 20 records/page, case-insensitive match on name or email
+// GET /employees/search?searchTerm=...&page=1&rowsPerPage=20&group=name&filter=my_circle
 app.get('/employees/search', async (req, res) => {
-  const searchTerm = req.query.searchTerm || '';
-  const page = parseInt(req.query.page, 10) || 1;
-  const rowsPerPage = parseInt(req.query.rowsPerPage, 10) || 20;
-  
-  const skip = (page - 1) * rowsPerPage;
-  const limit = rowsPerPage;
+  const {
+    searchTerm = '',
+    page = 1,
+    rowsPerPage = 20,
+    group,
+    filter = 'none',
+  } = req.query;
 
+  const skip  = (Math.max(1, parseInt(page, 10)) - 1) * Math.max(1, parseInt(rowsPerPage, 10));
+  const limit = Math.max(1, parseInt(rowsPerPage, 10));
   const regex = new RegExp(searchTerm, 'i');
 
+  // 1. Build the field‐level search:
+  const allFields    = ['name','email','phone','description'];
+  const searchFields = (group && allFields.includes(group)) ? [group] : allFields;
+  const textMatch    = { $or: searchFields.map(f => ({ [f]: regex })) };
+
+  // 2. Build the relationship filter _only_ if requested:
+  let relClause = {};
+  if (filter === 'my_circle') {
+    const CURRENT_USER_ID = '685b99a3bb3c4990248037d3'; 
+    
+    const me = await Employee.findById(CURRENT_USER_ID).select('reportsTo').lean();
+
+    if (!me) {
+      return res.status(404).json({ error: 'Current employee not found' });
+    }
+
+    if (me.reportsTo) {
+      // I have a manager → return me + peers
+      relClause = {
+        $or: [
+          { _id: me._id },
+          { reportsTo: me.reportsTo }
+        ]
+      };
+    } else {
+      // No manager (I’m top-level) → only me
+      relClause = { _id: me._id };
+    }
+  }
+
+  // 3. Combine text + (optional) relationship filters:
+  const finalQuery = filter === 'my_circle'
+    ? { $and: [ textMatch, relClause ] }
+    : textMatch;
+
   try {
-    const docs = await Employee.find({
-      $or: [
-        { name: regex },
-        { email: regex },
-        { phone: regex },
-        { description: regex },
-      ]
-    })
-    .skip(skip)
-    .limit(limit)
-    .populate('reportsTo', 'name')
-    .exec();
+    const [ data, totalResults ] = await Promise.all([
+      Employee.find(finalQuery)
+        .skip(skip)
+        .limit(limit)
+        .populate('reportsTo','name')
+        .lean(),
+      Employee.countDocuments(finalQuery),
+    ]);
 
-    const total = await Employee.countDocuments({
-      $or: [
-        { name: regex },
-        { email: regex },
-        { phone: regex },
-        { description: regex },
-      ]
-    });
-
-    res.json({
-      data: docs,
-      totalResults: total,
-    });
+    res.json({ data, totalResults, page: Number(page), rowsPerPage: Number(rowsPerPage) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 
 // 3. READ (GET by id) /employees/:id
@@ -181,5 +205,5 @@ app.delete('/employees/:id', async (req, res) => {
 
 
 // START SERVER
-const PORT = process.env.PORT || 8089;
+const PORT = process.env.PORT || 8090;
 app.listen(PORT, () => console.log(`API listening on http://localhost:${PORT}`));
